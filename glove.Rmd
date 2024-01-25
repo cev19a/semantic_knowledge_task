@@ -1,0 +1,108 @@
+---
+title: "Generate GloVe similarities"
+output: html_document
+date: "2023-11-14"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+require(tidyverse)
+require(Hmisc)
+require(rdist)
+
+corpus = read_csv('data/elp_clean.csv') %>% 
+  select(word, f = Freq_HAL, pos = POS)
+
+targets = readxl::read_xlsx('data/Final_60_new_2.xlsx') %>% 
+  mutate(word = tolower(Word)) %>% 
+  pull(word)
+
+# check to make sure they are all there in the corpus:
+for (word in targets){
+  if (word %nin% corpus$word){print(word)}
+}
+
+glove_50d = read_table('data/glove.6B.50d.txt', col_names = c("word", str_c('d', c(1:50))))
+
+glove_50d = glove_50d %>% 
+  filter(word %in% corpus$word)
+
+# make sure all the targets are in the GloVe subset
+for (word in targets){
+  if (word %nin% glove_50d$word){print(word)}
+}
+
+# rdist() takes about 30 minutes on data of this scale
+dists = rdist(glove_50d[,2:ncol(glove_50d)])
+
+
+# just get the pairwise distances for the 300 target words
+dists_ = as_tibble(dists[, match(targets, glove_50d$word)])
+colnames(dists) = targets
+
+
+ds = dists %>% 
+  rownames_to_column(var = "index") %>% 
+  pivot_longer(cols = where(is.numeric)) %>% 
+  left_join(glove_50d %>% 
+              select(pair = word) %>% 
+              rownames_to_column(var = "index"), by = "index") %>% 
+  rename(distance = value,
+         target = name) %>% 
+  # this part subsets such that only target-pair dyads are the same POS
+  left_join(pos_by_word %>% 
+              rename(target = word,
+                     pos_target = pos)) %>% 
+  left_join(pos_by_word %>% 
+              rename(pair = word,
+                     pos_pair = pos)) %>% 
+  filter(pos_target == pos_pair) %>% 
+  group_by(target) %>% 
+  arrange(distance) %>% 
+  mutate(rank = seq_len(n())) %>% 
+  select(target, pair, distance, rank)
+
+
+```
+
+
+For some reason the code above skipped several targets (identified by Cris, see 1/15/24 email):
+
+```{r}
+missing_targets = c("prodigal", "condemn", "incarceration", "martyr", "pestilence", "cellophane")
+
+
+# just get the pairwise distances for the 300 target words
+tmp_ = as_tibble(tmp[, match(targets, glove_50d$word)])
+colnames(tmp_) = targets
+
+
+ds = dists %>% 
+  rownames_to_column(var = "index") %>% 
+  pivot_longer(cols = where(is.numeric)) %>% 
+  left_join(glove_50d %>% 
+              select(pair = word) %>% 
+              rownames_to_column(var = "index"), by = "index") %>% 
+  rename(distance = value,
+         target = name) %>% 
+  # this part subsets such that only target-pair dyads are the same POS
+  left_join(pos_by_word %>% 
+              rename(target = word,
+                     pos_target = pos)) %>% 
+  left_join(pos_by_word %>% 
+              rename(pair = word,
+                     pos_pair = pos)) %>% 
+  filter(pos_target == pos_pair) %>% 
+  group_by(target) %>% 
+  arrange(distance) %>% 
+  mutate(rank = seq_len(n())) %>% 
+  select(target, pair, distance, rank)
+
+
+```
+
+
+
+We also need to get the semantic pair distributions for 
+
